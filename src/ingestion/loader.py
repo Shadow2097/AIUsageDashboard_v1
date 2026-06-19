@@ -126,6 +126,7 @@ def _upsert_session_aggregates(session_id: str, provider: str,
             ON CONFLICT(session_id) DO UPDATE SET
                 title               = excluded.title,
                 model               = excluded.model,
+                created_at          = excluded.created_at,
                 updated_at          = excluded.updated_at,
                 turn_count          = excluded.turn_count,
                 total_input_tokens  = excluded.total_input_tokens,

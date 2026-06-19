@@ -2,28 +2,41 @@
 Heuristics — provider-agnostic prompt analysis.
 
 Detects low-value patterns (pleasantries, context debt) in turn content.
-Individual checks can be extended or tuned per provider in the future.
 """
 
 import re
 
-PLEASANTRY_PATTERNS = [
-    r"\bplease\b", r"\bthank you\b", r"\bthanks\b", r"\bthank\b",
-    r"\bgreat\b", r"\bawesome\b", r"\bperfect\b", r"\bwonderful\b",
-    r"\bexcellent\b", r"\bsounds good\b", r"\bgot it\b", r"\bsure\b",
-    r"\bof course\b", r"\bcertainly\b", r"\babsolutely\b", r"\bhello\b",
-    r"\bhi\b", r"\bhey\b",
+# Always-flag: genuine pleasantry phrases regardless of message length
+_HIGH_CONFIDENCE_PATTERNS = [
+    r"\bthank you\b", r"\bthanks\b", r"\bthank\b",
+    r"\bsounds good\b", r"\bgot it\b",
+    r"\bhello\b", r"\bhey\b",
 ]
 
-_PLEASANTRY_RE = re.compile("|".join(PLEASANTRY_PATTERNS), re.IGNORECASE)
+# Only flag in short messages — these words are legitimate in technical text
+_LOW_CONFIDENCE_PATTERNS = [
+    r"\bgreat\b", r"\bawesome\b", r"\bperfect\b", r"\bwonderful\b",
+    r"\bexcellent\b", r"\bsure\b", r"\bof course\b",
+    r"\bcertainly\b", r"\babsolutely\b", r"\bhi\b",
+]
 
-CONTEXT_DEBT_RATIO_THRESHOLD = 15.0   # input/output ratio above this = debt warning
-CONTEXT_DEBT_ABSOLUTE_THRESHOLD = 40_000  # input tokens above this = debt warning
+# "please" omitted — it's a request qualifier, not a pleasantry
+
+_LOW_CONF_MAX_LEN = 300  # chars; skip low-confidence patterns in longer messages
+
+_HIGH_RE = re.compile("|".join(_HIGH_CONFIDENCE_PATTERNS), re.IGNORECASE)
+_LOW_RE  = re.compile("|".join(_LOW_CONFIDENCE_PATTERNS),  re.IGNORECASE)
+
+CONTEXT_DEBT_RATIO_THRESHOLD    = 15.0
+CONTEXT_DEBT_ABSOLUTE_THRESHOLD = 40_000
 
 
 def detect_pleasantries(content: str) -> list[str]:
     """Returns a list of matched pleasantry phrases found in content."""
-    return list({m.group(0).lower() for m in _PLEASANTRY_RE.finditer(content)})
+    matches = {m.group(0).lower() for m in _HIGH_RE.finditer(content)}
+    if len(content) <= _LOW_CONF_MAX_LEN:
+        matches |= {m.group(0).lower() for m in _LOW_RE.finditer(content)}
+    return list(matches)
 
 
 def check_context_debt(input_tokens: int, output_tokens: int) -> dict:

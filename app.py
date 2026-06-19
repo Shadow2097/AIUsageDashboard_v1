@@ -96,6 +96,17 @@ with st.sidebar:
                 save_setting("gemini_api_key", new_key)
                 st.rerun()
 
+        if p.provider_id == "claude-code":
+            cur_akey = get_setting("anthropic_api_key", "")
+            new_akey = st.text_input(
+                "Anthropic API Key (AI rewrite)", value=cur_akey,
+                type="password", key="sidebar_anthropic_api_key",
+                help="Used by Prompt Auditor's AI compression. Falls back to ANTHROPIC_API_KEY env var.",
+            )
+            if new_akey != cur_akey:
+                save_setting("anthropic_api_key", new_akey)
+                st.rerun()
+
         with st.expander("💰 Pricing ($/1M tokens)"):
             if p.provider_id == "gemini":
                 fi  = st.number_input("Flash In",  value=float(get_setting("gemini_flash_input_rate",  "0.075")), format="%.4f", key="gfi")
@@ -260,6 +271,14 @@ def _render_overview(pid: str):
             x=df_t["date"], y=df_t["daily_tokens"],
             name="Daily Tokens", line=dict(color="#f43f5e", width=2), yaxis="y2",
         ))
+        for _, row in df_t.iterrows():
+            fig.add_annotation(
+                x=row["date"], y=row["daily_cost"],
+                text=str(int(row["daily_sessions"])),
+                showarrow=False, yshift=12,
+                font=dict(size=10, color="#94a3b8"),
+                yref="y",
+            )
         fig.update_layout(
             template="plotly_dark",
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -399,7 +418,7 @@ def _render_explorer(pid: str, capabilities: set):
                     unsafe_allow_html=True,
                 )
 
-            if content:
+            if content and role == "user":
                 p_hits = detect_pleasantries(content)
                 if p_hits:
                     st.markdown(
@@ -417,11 +436,14 @@ def _render_explorer(pid: str, capabilities: set):
                     )
 
 
+_HIGH_COST_THRESHOLD = 0.05  # USD; turns above this are flagged as high-cost
+
+
 def _render_advice(pid: str):
     with get_connection() as conn:
         user_rows = conn.execute("""
             SELECT t.turn_id, t.session_id, t.sequence_index,
-                   t.content, t.created_at, s.title
+                   t.content, t.cost, t.created_at, s.title
             FROM turns t JOIN sessions s ON t.session_id = s.session_id
             WHERE t.provider = ? AND t.role = 'user' AND t.is_dismissed = 0
             ORDER BY t.created_at DESC
@@ -439,6 +461,17 @@ def _render_advice(pid: str):
             ORDER BY t.input_tokens DESC
         """, (pid,)).fetchall()
 
+        cost_rows = conn.execute("""
+            SELECT t.turn_id, t.session_id, t.sequence_index,
+                   t.content, t.input_tokens, t.output_tokens, t.cost,
+                   t.model, t.created_at, s.title
+            FROM turns t JOIN sessions s ON t.session_id = s.session_id
+            WHERE t.provider = ? AND t.is_dismissed = 0
+              AND t.cost > ?
+            ORDER BY t.cost DESC
+            LIMIT 20
+        """, (pid, _HIGH_COST_THRESHOLD)).fetchall()
+
     items = []
     for row in user_rows:
         hits = detect_pleasantries(row["content"])
@@ -450,17 +483,37 @@ def _render_advice(pid: str):
         if debt["debt_heavy"]:
             items.append({**dict(row), "type": "context_debt", "debt": debt})
 
+    seen_ids = {item["turn_id"] for item in items}
+    for row in cost_rows:
+        if row["turn_id"] not in seen_ids:
+            items.append({**dict(row), "type": "high_cost"})
+            seen_ids.add(row["turn_id"])
+
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+    # Summary header
+    n_plea  = sum(1 for i in items if i["type"] == "pleasantry")
+    n_debt  = sum(1 for i in items if i["type"] == "context_debt")
+    n_cost  = sum(1 for i in items if i["type"] == "high_cost")
+    pot_cost = sum(i.get("cost", 0.0) for i in items if i["type"] == "high_cost")
 
     if not items:
         st.markdown(
             '<div class="success-card">✅ <b>All clear.</b> '
-            'No pleasantry matches or context debt warnings found.</div>',
+            'No pleasantry matches, context debt, or high-cost turns found.</div>',
             unsafe_allow_html=True,
         )
         return
 
-    st.markdown(f"**{len(items)}** optimization opportunities:")
+    summary_parts = []
+    if n_plea: summary_parts.append(f"⚠️ {n_plea} pleasantry")
+    if n_debt: summary_parts.append(f"🚨 {n_debt} context-debt")
+    if n_cost: summary_parts.append(f"💸 {n_cost} high-cost (${pot_cost:.2f} total)")
+    st.markdown(
+        f'<div class="warning-card"><b>{len(items)} optimization opportunities</b> &nbsp;·&nbsp; '
+        f'{" &nbsp;·&nbsp; ".join(summary_parts)}</div>',
+        unsafe_allow_html=True,
+    )
 
     for item in items:
         st.divider()
@@ -477,7 +530,7 @@ def _render_advice(pid: str):
                     f'&nbsp; {phrases}',
                     unsafe_allow_html=True,
                 )
-            else:
+            elif item["type"] == "context_debt":
                 in_t  = item["input_tokens"]
                 out_t = item["output_tokens"]
                 ratio = in_t / max(1, out_t)
@@ -486,6 +539,18 @@ def _render_advice(pid: str):
                     f'border-radius:4px;font-size:.8rem;font-weight:600;">'
                     f'🚨 CONTEXT DEBT {ratio:.1f}x</span>'
                     f'&nbsp; {in_t:,} in → {out_t:,} out &nbsp; ${item["cost"]:.5f}',
+                    unsafe_allow_html=True,
+                )
+            else:
+                in_t  = item.get("input_tokens", 0) or 0
+                out_t = item.get("output_tokens", 0) or 0
+                model = item.get("model", "") or ""
+                st.markdown(
+                    f'<span style="background:#1a0a2e;color:#c084fc;padding:2px 8px;'
+                    f'border-radius:4px;font-size:.8rem;font-weight:600;">'
+                    f'💸 HIGH COST ${item["cost"]:.4f}</span>'
+                    f'&nbsp; {in_t:,} in · {out_t:,} out'
+                    + (f' &nbsp;·&nbsp; {model}' if model else ''),
                     unsafe_allow_html=True,
                 )
 
@@ -500,6 +565,50 @@ def _render_advice(pid: str):
                         (item["turn_id"],),
                     )
                 st.rerun()
+
+
+def _compress_with_llm(provider, prompt: str) -> tuple[str, int]:
+    """Calls the provider's LLM to compress a prompt. Returns (rewritten, token_count)."""
+    instruction = (
+        "Compress the following prompt to reduce its token count while fully preserving "
+        "all intent, requirements, and context. Return ONLY the rewritten prompt — "
+        "no explanations or commentary."
+    )
+    full_input = f"{instruction}\n\n{prompt}"
+
+    if provider.provider_id == "claude-code":
+        try:
+            import anthropic
+        except ImportError:
+            raise RuntimeError("anthropic package not installed. Run: pip install anthropic")
+        api_key = get_setting("anthropic_api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RuntimeError(
+                "No Anthropic API key found. Add it in the sidebar under Claude Code "
+                "settings, or set the ANTHROPIC_API_KEY environment variable."
+            )
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": full_input}],
+        )
+        rewritten = msg.content[0].text.strip()
+
+    elif provider.provider_id == "gemini":
+        import google.generativeai as genai
+        api_key = get_setting("gemini_api_key", "")
+        if not api_key:
+            raise RuntimeError("No Gemini API key found. Add it in the sidebar.")
+        genai.configure(api_key=api_key)
+        model_obj = genai.GenerativeModel("gemini-1.5-flash")
+        response = model_obj.generate_content(full_input)
+        rewritten = response.text.strip()
+
+    else:
+        raise ValueError(f"LLM compression not available for {provider.display_name}")
+
+    return rewritten, provider.count_tokens(rewritten)
 
 
 def _render_auditor(provider):
@@ -533,6 +642,52 @@ def _render_auditor(provider):
         f"At {provider.display_name} default rate — "
         f"as input: **${in_cost:.5f}** · as output: **${out_cost:.5f}**"
     )
+
+    st.divider()
+    col_btn, col_cap = st.columns([1, 4])
+    with col_btn:
+        rewrite_clicked = st.button(
+            "✨ Compress with AI",
+            key=f"rewrite_btn_{provider.provider_id}",
+            use_container_width=True,
+        )
+    with col_cap:
+        lbl = "claude-haiku-4-5-20251001" if provider.provider_id == "claude-code" else "gemini-1.5-flash"
+        st.caption(f"Rewrites your prompt using **{lbl}** to minimize tokens while preserving intent.")
+
+    rw_key = f"rewrite_{provider.provider_id}"
+    if rewrite_clicked:
+        with st.spinner("Compressing prompt…"):
+            try:
+                rewritten, new_count = _compress_with_llm(provider, prompt)
+                st.session_state[rw_key] = {
+                    "rewritten": rewritten,
+                    "orig_count": token_count,
+                    "new_count": new_count,
+                    "source_prompt": prompt,
+                }
+            except Exception as exc:
+                st.error(str(exc))
+
+    rw = st.session_state.get(rw_key)
+    if rw and rw.get("source_prompt") == prompt:
+        orig  = rw["orig_count"]
+        new_c = rw["new_count"]
+        saved = orig - new_c
+        pct   = saved / max(1, orig) * 100
+        st.subheader("✅ Compressed Prompt")
+        cc1, cc2, cc3 = st.columns(3)
+        cc1.metric("Original Tokens", f"{orig:,}")
+        cc2.metric("Compressed Tokens", f"{new_c:,}",
+                   delta=f"-{saved:,}" if saved >= 0 else f"+{-saved:,}",
+                   delta_color="inverse")
+        cc3.metric("Token Savings", f"{pct:.1f}%")
+        st.text_area(
+            "Rewritten prompt:",
+            value=rw["rewritten"],
+            height=200,
+            key=f"rewrite_result_{provider.provider_id}",
+        )
 
 
 # ── Main layout ────────────────────────────────────────────────────────────────
