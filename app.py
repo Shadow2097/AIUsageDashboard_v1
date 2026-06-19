@@ -690,6 +690,185 @@ def _render_auditor(provider):
         )
 
 
+# ── Compare tab ───────────────────────────────────────────────────────────────
+
+_PROVIDER_COLORS = ["#38bdf8", "#f43f5e", "#a3e635", "#fb923c"]
+
+
+def _render_compare(providers: list):
+    """Cross-provider comparison — metrics only, no session content."""
+
+    totals  = {p.provider_id: _q_totals(p.provider_id) for p in providers}
+    labels  = [p.display_name for p in providers]
+    colors  = _PROVIDER_COLORS[:len(providers)]
+
+    # ── Summary table ──────────────────────────────────────────────────────────
+    st.subheader("📊 At a Glance")
+    rows = []
+    for p in providers:
+        t = totals[p.provider_id]
+        tok = t["total_input"] + t["total_output"]
+        rows.append({
+            "Provider":          p.display_name,
+            "Sessions":          f"{t['session_count']:,}",
+            "Total Cost":        f"${t['total_cost']:.2f}",
+            "Total Tokens":      f"{tok:,}",
+            "Turns":             f"{t['total_turns']:,}",
+            "Avg Cost / Session":f"${t['total_cost'] / max(1, t['session_count']):.2f}",
+            "Output Ratio":      f"{t['total_output'] / max(1, t['total_input']) * 100:.1f}%",
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── Cost vs Token Volume ───────────────────────────────────────────────────
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.subheader("💰 Total Spend")
+        fig_cost = go.Figure(go.Bar(
+            x=labels,
+            y=[totals[p.provider_id]["total_cost"] for p in providers],
+            marker_color=colors,
+            text=[f"${totals[p.provider_id]['total_cost']:.2f}" for p in providers],
+            textposition="outside",
+        ))
+        fig_cost.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            yaxis=dict(title="USD"),
+            showlegend=False,
+            margin=dict(l=40, r=40, t=10, b=40), height=280,
+        )
+        st.plotly_chart(fig_cost, use_container_width=True)
+
+    with col_b:
+        st.subheader("🔢 Token Volume")
+        fig_tok = go.Figure()
+        for p, color in zip(providers, colors):
+            t = totals[p.provider_id]
+            fig_tok.add_trace(go.Bar(
+                name=p.display_name,
+                x=["Input", "Output"],
+                y=[t["total_input"], t["total_output"]],
+                marker_color=color,
+            ))
+        fig_tok.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            barmode="group",
+            yaxis=dict(title="Tokens"),
+            legend=dict(x=0.01, y=0.99),
+            margin=dict(l=40, r=40, t=10, b=40), height=280,
+        )
+        st.plotly_chart(fig_tok, use_container_width=True)
+
+    # ── Daily Cost Overlay ─────────────────────────────────────────────────────
+    st.subheader("📅 Daily Cost Trends")
+    fig_trend = go.Figure()
+    any_trend = False
+    for p, color in zip(providers, colors):
+        df_t = _q_daily_trends(p.provider_id)
+        if not df_t.empty:
+            any_trend = True
+            fig_trend.add_trace(go.Scatter(
+                x=df_t["date"], y=df_t["daily_cost"],
+                name=p.display_name,
+                mode="lines+markers",
+                line=dict(color=color, width=2),
+                marker=dict(size=5),
+            ))
+    if any_trend:
+        fig_trend.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(title="Date"),
+            yaxis=dict(title="Daily Cost (USD)"),
+            legend=dict(x=0.01, y=0.99),
+            margin=dict(l=40, r=40, t=10, b=40), height=300,
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    else:
+        st.info("No daily trend data available.")
+
+    # ── Efficiency Leaderboard ─────────────────────────────────────────────────
+    st.subheader("🏆 Efficiency Leaderboard")
+    eff_rows = []
+    for p in providers:
+        t = totals[p.provider_id]
+        out_ratio  = t["total_output"] / max(1, t["total_input"]) * 100
+        cost_per_k = t["total_cost"] / max(1, t["total_output"]) * 1_000
+        cost_p_ses = t["total_cost"] / max(1, t["session_count"])
+        cost_p_trn = t["total_cost"] / max(1, t["total_turns"])
+        eff_rows.append({
+            "Provider":              p.display_name,
+            "Output/Input %":        f"{out_ratio:.2f}%",
+            "Cost / 1K Out Tokens":  f"${cost_per_k:.4f}",
+            "Avg Cost / Session":    f"${cost_p_ses:.2f}",
+            "Avg Cost / Turn":       f"${cost_p_trn:.5f}",
+        })
+    st.dataframe(pd.DataFrame(eff_rows), use_container_width=True, hide_index=True)
+
+    # Cost per 1K output tokens — bar chart
+    fig_eff = go.Figure(go.Bar(
+        x=labels,
+        y=[totals[p.provider_id]["total_cost"] / max(1, totals[p.provider_id]["total_output"]) * 1_000
+           for p in providers],
+        marker_color=colors,
+        text=[f"${totals[p.provider_id]['total_cost'] / max(1, totals[p.provider_id]['total_output']) * 1_000:.4f}"
+              for p in providers],
+        textposition="outside",
+    ))
+    fig_eff.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        yaxis=dict(title="USD per 1K output tokens"),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=10, b=40), height=240,
+        annotations=[dict(
+            text="Lower = more cost-efficient",
+            x=0.5, y=1.05, xref="paper", yref="paper",
+            showarrow=False, font=dict(size=11, color="#94a3b8"),
+        )],
+    )
+    st.plotly_chart(fig_eff, use_container_width=True)
+
+    # ── Spend & Session Distribution ───────────────────────────────────────────
+    col_p1, col_p2 = st.columns(2)
+
+    with col_p1:
+        st.subheader("🗂 Sessions by Provider")
+        fig_s_pie = go.Figure(go.Pie(
+            labels=labels,
+            values=[totals[p.provider_id]["session_count"] for p in providers],
+            marker=dict(colors=colors),
+            hole=0.45,
+            textinfo="label+percent",
+        ))
+        fig_s_pie.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            showlegend=False,
+            margin=dict(l=10, r=10, t=10, b=10), height=260,
+        )
+        st.plotly_chart(fig_s_pie, use_container_width=True)
+
+    with col_p2:
+        st.subheader("💸 Spend by Provider")
+        fig_c_pie = go.Figure(go.Pie(
+            labels=labels,
+            values=[totals[p.provider_id]["total_cost"] for p in providers],
+            marker=dict(colors=colors),
+            hole=0.45,
+            textinfo="label+percent",
+        ))
+        fig_c_pie.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            showlegend=False,
+            margin=dict(l=10, r=10, t=10, b=10), height=260,
+        )
+        st.plotly_chart(fig_c_pie, use_container_width=True)
+
+
 # ── Main layout ────────────────────────────────────────────────────────────────
 st.title("📊 AI Usage Dashboard")
 st.caption("Multi-provider AI log analysis — token usage, cost, and prompt efficiency.")
@@ -706,7 +885,10 @@ if not _visible:
         unsafe_allow_html=True,
     )
 else:
-    root_tabs = st.tabs([p.display_name for p in _visible])
+    _with_data   = [p for p in _visible if _has_data(p.provider_id)]
+    _has_compare = len(_with_data) >= 2
+    _tab_labels  = [p.display_name for p in _visible] + (["⚖️ Compare"] if _has_compare else [])
+    root_tabs    = st.tabs(_tab_labels)
 
     for tab, provider in zip(root_tabs, _visible):
         with tab:
@@ -724,3 +906,7 @@ else:
                 _render_advice(provider.provider_id)
             with aud:
                 _render_auditor(provider)
+
+    if _has_compare:
+        with root_tabs[-1]:
+            _render_compare(_with_data)
