@@ -50,32 +50,69 @@ intercept, or influence the behavior of any AI tool it monitors.
 
 ---
 
-## Phase 2: Analytics Depth
+## Phase 2: Analytics Depth ✅ Complete
 
-- [ ] Heuristic analyzer tuning: per-provider pleasantry thresholds; reduce false positives
-      on Claude Code system/tool turns.
-- [ ] Provider capability flags: conditionally render cache token breakdowns for Claude
-      (cache write/read timeline overlay already present; expand in Phase 2).
-- [ ] LLM-in-the-loop prompt compression audit (Flash for Gemini sessions, Haiku for Claude).
-- [ ] Session efficiency scoring refinement: context growth rate, cost-per-turn trend.
-- [ ] Advice tab: add high-cost turn cards; per-session summary of total savings potential.
-- [ ] Prompt Auditor: add LLM-rewrite button with before/after token comparison.
-- [ ] Daily trend chart: add session-count third axis or annotation layer.
+- [x] Heuristic analyzer tuning: split pleasantry patterns into high-confidence
+      (`thank you`, `got it`, `sounds good`) and low-confidence (`great`, `sure`, `of course`)
+      tiers. Low-confidence only fires on short turns (≤ 300 chars). Removed `please`.
+      Role filter: pleasantry detection runs on `user` turns only.
+- [x] Provider capability flags: cache token breakdowns render conditionally for providers
+      that declare `cache_tokens` (Claude Code, Codex).
+- [x] LLM-in-the-loop prompt compression: **✨ Compress with AI** button in Prompt Auditor.
+      Uses Claude Haiku (via `anthropic_api_key`) for Claude Code and Codex sessions;
+      Gemini 1.5 Flash (via `gemini_api_key`) for Gemini sessions. Result persisted in
+      `st.session_state` keyed by source prompt to survive Streamlit rerenders.
+- [x] Session efficiency scoring: `output_tokens / input_tokens * 100` stored on sessions.
+- [x] Advice tab: three card types in one sorted list with summary banner:
+      - ⚠️ Pleasantry — user turns with low-signal phrases
+      - 🚨 Context Debt — turns where context exceeds 80% of context window
+      - 💸 High Cost — turns with cost > $0.05; shows top 20, total exposure
+      Summary banner: `"N opportunities · ⚠️ X pleasantry · 🚨 Y context-debt · 💸 Z high-cost ($total)"`
+- [x] Daily trend chart: session-count annotations rendered above each bar.
+- [x] Sidebar: Anthropic API key input (password field) under Claude Code section.
+- [x] Bug fix: `created_at` column was empty on all sessions because the
+      `ON CONFLICT DO UPDATE SET` in `_upsert_session_aggregates` was missing
+      `created_at = excluded.created_at`. Fixed; existing rows backfilled.
 
-## Phase 3: Cross-Provider Compare Tab
+---
 
-- [ ] Root-level **Compare** tab (appears when 2+ providers have data).
-- [ ] Total spend, token volume, and session count by provider (bar/pie charts).
-- [ ] Efficiency leaderboard: output-per-token ratio across providers.
-- [ ] Daily/weekly cost trend lines overlaid across providers.
-- [ ] No session content in Compare — metrics only.
+## Phase 3: Cross-Provider Compare Tab ✅ Complete
 
-## Phase 4: Additional Providers
+- [x] Root-level **⚖️ Compare** tab — auto-appears when 2+ providers have ingested data;
+      auto-hides when ≤ 1 provider has data.
+- [x] **At a Glance** summary table: sessions, cost, tokens, turns, avg cost/session,
+      output ratio — one row per provider.
+- [x] **Total Spend** horizontal bar chart (USD).
+- [x] **Token Volume** grouped bar chart: input vs. output tokens per provider.
+- [x] **Daily Cost Trends** multi-line overlay: one line per provider on a shared x-axis.
+- [x] **Efficiency Leaderboard** table: output/input%, cost/1K output tokens,
+      avg cost/session, avg cost/turn — plus a horizontal bar chart with annotation.
+- [x] **Donut pies**: Sessions by Provider | Spend by Provider.
+- [x] `_PROVIDER_COLORS` constant: consistent color assignment across all Compare charts.
 
+---
+
+## Phase 4: Additional Providers 🔄 In Progress
+
+- [x] Research OpenAI Codex Desktop log format; implement **CodexProvider**:
+      - Log path: `~/.codex/sessions/{year}/{month}/{day}/*.jsonl`
+      - Format: typed JSONL events; turns bracketed by `task_started` / `task_complete`
+      - Token counts: native from `event_msg/token_count` — `total_token_usage` (cumulative per turn)
+      - User content: `event_msg/user_message.payload.message`
+      - Assistant content: `task_complete.last_agent_message`
+      - Cache tokens: `cached_input_tokens` → `cache_read_tokens`
+      - Model: `gpt-5.5` or `gpt-5.4-mini` from `turn_context` event
+      - Pricing: $0 defaults; configurable in sidebar when OpenAI publishes rates
+- [x] Stub **DevinProvider** for Windsurf IDE / DevinAI:
+      - Log path: `%APPDATA%/Devin/logs/{YYYYMMDDTHHMMSS}/`
+      - Structure: VS Code-fork Electron app; AI logs under `window1/exthost/codeium.windsurf/`
+      - Candidate file: `window1/output_{timestamp}/agentSessionsOutput.log`
+      - `discover_sessions()` functional; `parse_turns()` no-op until format is known
+      - All log files were 0 KB at time of investigation (2026-06-19)
+- [ ] Flesh out DevinProvider once log files contain real session data.
 - [ ] Research and document Cursor log format and storage location.
 - [ ] Implement Cursor provider plugin.
-- [ ] Evaluate and onboard one additional provider (Copilot, Windsurf, Cody, or similar).
-- [ ] Provider auto-detection: scan known default paths and suggest configuration.
+- [ ] Provider auto-detection: scan known default paths and suggest configuration in sidebar.
 
 ---
 

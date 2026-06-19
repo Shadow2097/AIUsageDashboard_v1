@@ -6,21 +6,22 @@ prompt efficiency insights — per provider and in aggregate.
 
 ## Supported Providers
 
-| Provider | Status |
-| :--- | :--- |
-| Antigravity / Gemini CLI | ✅ Phase 1 |
-| Claude Code | ✅ Phase 1 |
-| Cursor | 🔬 Phase 4 (research needed) |
-| Windsurf | 🔬 Phase 4 (research needed) |
+| Provider | Status | Log Format |
+| :--- | :--- | :--- |
+| Antigravity / Gemini CLI | ✅ Implemented | JSONL, one file per session |
+| Claude Code | ✅ Implemented | JSONL, typed events, native token counts |
+| OpenAI Codex Desktop | ✅ Implemented | JSONL, task_started/task_complete events |
+| Devin (Windsurf IDE) | 🔧 Stub | Log format TBD — all files currently 0 KB |
+| Cursor | 🔬 Research needed | Likely LevelDB or SQLite |
 
 ## Phase Status
 
 | Phase | Status | Summary |
 | :--- | :--- | :--- |
-| **Phase 1** — Multi-Provider Foundation | ✅ Complete | Schema, providers, ingestion, full UI |
-| **Phase 2** — Analytics Depth | 🔲 Not started | Heuristic tuning, LLM compression audit, efficiency scoring |
-| **Phase 3** — Cross-Provider Compare Tab | 🔲 Not started | Aggregate cross-provider charts |
-| **Phase 4** — Additional Providers | 🔬 Research | Cursor, Windsurf format investigation |
+| **Phase 1** — Multi-Provider Foundation | ✅ Complete | Schema, two providers, incremental ingestion, full four-tab UI |
+| **Phase 2** — Analytics Depth | ✅ Complete | Heuristic tuning, Advice cards, LLM compression, daily annotations |
+| **Phase 3** — Cross-Provider Compare Tab | ✅ Complete | Aggregate charts, efficiency leaderboard, donut pies |
+| **Phase 4** — Additional Providers | 🔄 In Progress | Codex ✅, Devin stub 🔧, Cursor 🔬 |
 
 ## Quick Start
 
@@ -34,22 +35,40 @@ streamlit run app.py
 
 On first run, set a log directory for each provider in the sidebar and click **Rescan**.
 
-### Log Paths (defaults)
+### Default Log Paths
 
 | Provider | Default Log Path |
 | :--- | :--- |
 | Claude Code | `C:\Users\{user}\.claude\projects\` |
 | Antigravity / Gemini | `~\.gemini\antigravity\brain\` |
+| OpenAI Codex Desktop | `C:\Users\{user}\.codex\sessions\` |
+| Devin (Windsurf IDE) | `C:\Users\{user}\AppData\Roaming\Devin\logs\` |
 
 ## UI Overview
 
 ```
-[ Claude Code ]  [ Antigravity / Gemini ]        ← Root provider tabs
+[ Gemini ]  [ Claude Code ]  [ Codex ]  [ Devin ]  [ ⚖️ Compare ]
     ├── 📈 Overview          Metric tiles, daily cost/token trend, session table
     ├── 💬 Session Explorer  Session picker, context growth chart, transcript
-    ├── 💡 Advice            Pleasantry & context-debt cards (dismissible)
-    └── 🔍 Prompt Auditor    Token estimate, pleasantry check, cost projection
+    ├── 💡 Advice            Pleasantry, context-debt, and high-cost cards (dismissible)
+    └── 🔍 Prompt Auditor    Token estimate, pleasantry check, LLM compression
 ```
+
+The **⚖️ Compare** tab appears automatically when two or more providers have ingested data.
+
+### Advice Tab — Card Types
+
+| Card | Trigger | Color |
+| :--- | :--- | :--- |
+| ⚠️ Pleasantry | User turn with low-signal phrases ("thanks", "sounds good") | Amber |
+| 🚨 Context Debt | Assistant turn with context > 80% of model context window | Red |
+| 💸 High Cost | Turn cost > $0.05 | Purple |
+
+### Prompt Auditor
+
+Paste any prompt to get a token count, pleasantry scan, and cost projection. If an
+Anthropic API key is configured, the **✨ Compress with AI** button rewrites the prompt
+with Claude Haiku and shows before/after token savings.
 
 ## Project Docs
 
