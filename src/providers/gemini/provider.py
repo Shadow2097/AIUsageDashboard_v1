@@ -58,23 +58,34 @@ class GeminiProvider(LogProvider):
     capabilities = {"model_switching"}
 
     def discover_sessions(self, log_dir: str) -> list[SessionMeta]:
-        """Scans log_dir for .jsonl session files."""
+        """Scans log_dir recursively for .jsonl session files.
+
+        AntiGravity CLI stores chats under {log_dir}/{project}/chats/*.jsonl,
+        so a recursive walk is required. Point log_dir at ~/.gemini/tmp/ (or
+        any ancestor) and all project chat sessions will be discovered.
+        """
         sessions = []
         if not log_dir or not os.path.isdir(log_dir):
             return sessions
-        for fname in os.listdir(log_dir):
-            if not fname.endswith(".jsonl"):
-                continue
-            file_path = os.path.join(log_dir, fname)
-            stat = os.stat(file_path)
-            session_id = fname.replace(".jsonl", "")
-            sessions.append(SessionMeta(
-                session_id=session_id,
-                file_path=file_path,
-                project_path=log_dir,
-                file_size=stat.st_size,
-                last_modified=stat.st_mtime,
-            ))
+        for root, _dirs, files in os.walk(log_dir):
+            for fname in files:
+                if not fname.endswith(".jsonl"):
+                    continue
+                file_path = os.path.join(root, fname)
+                try:
+                    stat = os.stat(file_path)
+                except OSError:
+                    continue
+                session_id = fname.replace(".jsonl", "")
+                # Use the containing directory as project_path context
+                project_path = os.path.dirname(file_path)
+                sessions.append(SessionMeta(
+                    session_id=session_id,
+                    file_path=file_path,
+                    project_path=project_path,
+                    file_size=stat.st_size,
+                    last_modified=stat.st_mtime,
+                ))
         return sessions
 
     def parse_turns(self, session_meta: SessionMeta, start_line: int) -> list[CanonicalTurn]:
