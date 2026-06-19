@@ -142,6 +142,14 @@ with st.sidebar:
                                   ("codex_mini_input_rate", dmi), ("codex_mini_output_rate", dmo)]:
                         save_setting(k, str(v))
                     st.success("Saved!")
+            elif p.provider_id == "devin":
+                st.caption("Devin pricing is task-based; token rates TBD once log format is known.")
+                dvi = st.number_input("In",  value=float(get_setting("devin_input_rate",  "0.0")), format="%.4f", key="dvi")
+                dvo = st.number_input("Out", value=float(get_setting("devin_output_rate", "0.0")), format="%.4f", key="dvo")
+                if st.button("Save Devin Rates", use_container_width=True, key="save_dvrates"):
+                    for k, v in [("devin_input_rate", dvi), ("devin_output_rate", dvo)]:
+                        save_setting(k, str(v))
+                    st.success("Saved!")
 
         if st.button(f"🔄 Rescan {p.display_name}",
                      key=f"rescan_{p.provider_id}", use_container_width=True):
