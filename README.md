@@ -13,6 +13,15 @@ prompt efficiency insights — per provider and in aggregate.
 | Cursor | 🔬 Phase 4 (research needed) |
 | Windsurf | 🔬 Phase 4 (research needed) |
 
+## Phase Status
+
+| Phase | Status | Summary |
+| :--- | :--- | :--- |
+| **Phase 1** — Multi-Provider Foundation | ✅ Complete | Schema, providers, ingestion, full UI |
+| **Phase 2** — Analytics Depth | 🔲 Not started | Heuristic tuning, LLM compression audit, efficiency scoring |
+| **Phase 3** — Cross-Provider Compare Tab | 🔲 Not started | Aggregate cross-provider charts |
+| **Phase 4** — Additional Providers | 🔬 Research | Cursor, Windsurf format investigation |
+
 ## Quick Start
 
 ```bash
@@ -23,7 +32,24 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Configure log directories for each provider in the Settings panel on first run.
+On first run, set a log directory for each provider in the sidebar and click **Rescan**.
+
+### Log Paths (defaults)
+
+| Provider | Default Log Path |
+| :--- | :--- |
+| Claude Code | `C:\Users\{user}\.claude\projects\` |
+| Antigravity / Gemini | `~\.gemini\antigravity\brain\` |
+
+## UI Overview
+
+```
+[ Claude Code ]  [ Antigravity / Gemini ]        ← Root provider tabs
+    ├── 📈 Overview          Metric tiles, daily cost/token trend, session table
+    ├── 💬 Session Explorer  Session picker, context growth chart, transcript
+    ├── 💡 Advice            Pleasantry & context-debt cards (dismissible)
+    └── 🔍 Prompt Auditor    Token estimate, pleasantry check, cost projection
+```
 
 ## Project Docs
 
