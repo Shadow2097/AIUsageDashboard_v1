@@ -98,6 +98,16 @@ def init_db():
         );
         """)
 
+        # Seed provider rows so the FK on sessions.provider is satisfied
+        conn.execute("""
+            INSERT OR IGNORE INTO providers (provider_id, display_name)
+            VALUES ('gemini', 'Antigravity / Gemini');
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO providers (provider_id, display_name)
+            VALUES ('claude-code', 'Claude Code');
+        """)
+
         # Default settings
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('gemini_api_key', '');")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('gemini_flash_input_rate', '0.075');")
