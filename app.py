@@ -118,7 +118,7 @@ with st.sidebar:
                                   ("gemini_pro_input_rate", pi_), ("gemini_pro_output_rate", po)]:
                         save_setting(k, str(v))
                     st.success("Saved!")
-            else:
+            elif p.provider_id == "claude-code":
                 hi = st.number_input("Haiku In",   value=float(get_setting("claude_haiku_input_rate",   "0.80")),  format="%.2f", key="chi")
                 ho = st.number_input("Haiku Out",  value=float(get_setting("claude_haiku_output_rate",  "4.00")),  format="%.2f", key="cho")
                 si = st.number_input("Sonnet In",  value=float(get_setting("claude_sonnet_input_rate",  "3.00")),  format="%.2f", key="csi")
@@ -129,6 +129,17 @@ with st.sidebar:
                     for k, v in [("claude_haiku_input_rate", hi), ("claude_haiku_output_rate", ho),
                                   ("claude_sonnet_input_rate", si), ("claude_sonnet_output_rate", so),
                                   ("claude_opus_input_rate", oi), ("claude_opus_output_rate", oo)]:
+                        save_setting(k, str(v))
+                    st.success("Saved!")
+            elif p.provider_id == "codex":
+                st.caption("Enter rates when OpenAI publishes Codex pricing.")
+                dxi = st.number_input("GPT-5.5 In",      value=float(get_setting("codex_input_rate",      "0.0")), format="%.4f", key="dxi")
+                dxo = st.number_input("GPT-5.5 Out",     value=float(get_setting("codex_output_rate",     "0.0")), format="%.4f", key="dxo")
+                dmi = st.number_input("GPT-5.4-mini In",  value=float(get_setting("codex_mini_input_rate",  "0.0")), format="%.4f", key="dmi")
+                dmo = st.number_input("GPT-5.4-mini Out", value=float(get_setting("codex_mini_output_rate", "0.0")), format="%.4f", key="dmo")
+                if st.button("Save Codex Rates", use_container_width=True, key="save_dxrates"):
+                    for k, v in [("codex_input_rate", dxi), ("codex_output_rate", dxo),
+                                  ("codex_mini_input_rate", dmi), ("codex_mini_output_rate", dmo)]:
                         save_setting(k, str(v))
                     st.success("Saved!")
 
@@ -576,7 +587,7 @@ def _compress_with_llm(provider, prompt: str) -> tuple[str, int]:
     )
     full_input = f"{instruction}\n\n{prompt}"
 
-    if provider.provider_id == "claude-code":
+    if provider.provider_id in ("claude-code", "codex"):
         try:
             import anthropic
         except ImportError:

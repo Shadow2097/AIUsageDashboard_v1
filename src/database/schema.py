@@ -107,6 +107,10 @@ def init_db():
             INSERT OR IGNORE INTO providers (provider_id, display_name)
             VALUES ('claude-code', 'Claude Code');
         """)
+        conn.execute("""
+            INSERT OR IGNORE INTO providers (provider_id, display_name)
+            VALUES ('codex', 'Codex');
+        """)
 
         # Default settings
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('gemini_api_key', '');")
@@ -120,6 +124,10 @@ def init_db():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('claude_sonnet_output_rate', '15.00');")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('claude_opus_input_rate', '15.00');")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('claude_opus_output_rate', '75.00');")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('codex_input_rate', '0.0');")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('codex_output_rate', '0.0');")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('codex_mini_input_rate', '0.0');")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('codex_mini_output_rate', '0.0');")
 
 
 def get_setting(key: str, default: str = "") -> str:

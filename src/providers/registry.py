@@ -8,10 +8,12 @@ No other file needs to change.
 from .base import LogProvider
 from .gemini.provider import GeminiProvider
 from .claude_code.provider import ClaudeCodeProvider
+from .codex.provider import CodexProvider
 
 PROVIDERS: list[type[LogProvider]] = [
     GeminiProvider,
     ClaudeCodeProvider,
+    CodexProvider,
 ]
 
 
