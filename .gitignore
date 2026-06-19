@@ -1,0 +1,43 @@
+# --- Virtual environment ---
+.venv/
+venv/
+env/
+
+# --- Database ---
+data/dashboard.db
+data/*.db
+
+# --- Python bytecode ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- Distribution / packaging ---
+*.egg-info/
+dist/
+build/
+*.egg
+
+# --- Testing / coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- IDE / editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+
+# --- Environment files (may contain API keys) ---
+.env
+.env.*
