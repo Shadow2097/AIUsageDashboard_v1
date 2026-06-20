@@ -55,7 +55,7 @@ def _extract_model_change(content: str) -> Optional[str]:
 class GeminiProvider(LogProvider):
     provider_id = "gemini"
     display_name = "Antigravity / Gemini"
-    capabilities = {"model_switching"}
+    capabilities = {"model_switching", "native_token_counts", "cache_tokens"}
 
     def discover_sessions(self, log_dir: str) -> list[SessionMeta]:
         """Scans log_dir recursively for .jsonl session files.
@@ -90,18 +90,21 @@ class GeminiProvider(LogProvider):
 
     def parse_turns(self, session_meta: SessionMeta, start_line: int) -> list[CanonicalTurn]:
         """
-        Parses new lines from the Gemini JSONL file starting at start_line.
+        Parses new lines from the AntiGravity/Gemini JSONL file starting at start_line.
 
-        Gemini logs do not include token counts, so this method estimates them via
-        count_tokens() (SDK call with SQLite cache, heuristic fallback).
-        Context accumulates across turns so input_tokens on each assistant turn
-        reflects the full prompt sent to the model up to that point.
+        Current log format (AntiGravity CLI):
+          {"sessionId": ..., "kind": "main"}           — session metadata, skip
+          {"$set": {...}}                               — incremental update, skip
+          {"type": "user",   "content": [{"text":"…"}], "timestamp": "…"}
+          {"type": "gemini", "content": "…", "timestamp": "…",
+           "tokens": {"input": N, "output": N, "cached": N, …}, "model": "…"}
+
+        Token counts are NATIVE on gemini turns. User turns are estimated via count_tokens().
         """
         turns = []
         session_id = session_meta.session_id
         current_line = 0
         current_model = ""
-        context_tokens = 0
 
         if not os.path.exists(session_meta.file_path):
             return turns
@@ -114,62 +117,78 @@ class GeminiProvider(LogProvider):
                         continue
 
                     line_str = raw_line.strip()
+                    current_line += 1
                     if not line_str:
-                        current_line += 1
                         continue
 
                     try:
                         event = json.loads(line_str)
                     except json.JSONDecodeError as e:
                         print(f"[GeminiProvider] Skipping malformed JSON on line {current_line}: {e}")
-                        current_line += 1
                         continue
 
-                    source = event.get("source", "")
-                    raw_type = event.get("type", source)
-                    content = event.get("content", "") or ""
-                    created_at = event.get("created_at", "")
+                    # Skip metadata-only lines
+                    if "$set" in event or "sessionId" in event:
+                        continue
 
-                    model_change = _extract_model_change(content)
-                    if model_change:
-                        current_model = model_change
+                    event_type = event.get("type", "")
+                    created_at = event.get("timestamp", "")
 
-                    role = ROLE_MAP.get(source, "system")
-                    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
-                    turn_tokens = self.count_tokens(content)
-
-                    if role == "assistant":
-                        input_tokens = context_tokens
-                        output_tokens = turn_tokens
-                    else:
-                        input_tokens = turn_tokens
+                    if event_type == "user":
+                        blocks = event.get("content", [])
+                        if isinstance(blocks, list):
+                            content = " ".join(
+                                b.get("text", "") for b in blocks if isinstance(b, dict)
+                            ).strip()
+                        elif isinstance(blocks, str):
+                            content = blocks
+                        else:
+                            content = ""
+                        role = "user"
+                        input_tokens  = self.count_tokens(content)
                         output_tokens = 0
+                        cache_read_tokens = None
+                        pricing = self.get_pricing(current_model)
+                        cost = input_tokens * pricing.input_rate / 1_000_000
 
-                    context_tokens += turn_tokens
+                    elif event_type == "gemini":
+                        raw_content = event.get("content")
+                        content = raw_content if isinstance(raw_content, str) else ""
+                        model = event.get("model", "")
+                        if model:
+                            current_model = model
+                        role = "assistant"
+                        tok = event.get("tokens", {}) or {}
+                        input_tokens      = tok.get("input",  0) or 0
+                        output_tokens     = tok.get("output", 0) or 0
+                        cached            = tok.get("cached", 0) or 0
+                        cache_read_tokens = cached if cached else None
+                        pricing = self.get_pricing(current_model)
+                        cost = (
+                            input_tokens  * pricing.input_rate  / 1_000_000 +
+                            output_tokens * pricing.output_rate / 1_000_000
+                        )
 
-                    pricing = self.get_pricing(current_model)
-                    cost = (
-                        (input_tokens * pricing.input_rate / 1_000_000) +
-                        (output_tokens * pricing.output_rate / 1_000_000)
-                    )
+                    else:
+                        continue  # toolCall, system, or other — skip
 
+                    content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
                     turns.append(CanonicalTurn(
-                        turn_id=f"{session_id}_{current_line}",
+                        turn_id=f"{session_id}_{current_line - 1}",
                         session_id=session_id,
                         provider=self.provider_id,
-                        sequence_index=current_line,
+                        sequence_index=current_line - 1,
                         role=role,
-                        raw_type=raw_type,
+                        raw_type=event_type,
                         content=content,
                         content_hash=content_hash,
                         model=current_model,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
+                        cache_read_tokens=cache_read_tokens,
                         cost=cost,
                         created_at=created_at,
                     ))
-
-                    current_line += 1
 
         except Exception as e:
             print(f"[GeminiProvider] Error reading {session_meta.file_path}: {e}")

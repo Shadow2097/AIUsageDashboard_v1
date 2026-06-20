@@ -219,7 +219,14 @@ def ingest_provider(provider_id: str) -> tuple[int, int]:
                 session_meta.project_path, title
             )
 
-        total_lines = start_line + len(new_turns)
+        # Use actual file line count as the resume position. Storing
+        # start_line + len(turns) undercounts when a provider skips lines
+        # (e.g. $set / sessionMeta in Gemini, or tool-call events in Codex).
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as fc:
+                total_lines = sum(1 for _ in fc)
+        except Exception:
+            total_lines = start_line + len(new_turns)
         _update_file_state(
             file_path, provider_id, session_meta.file_size,
             current_hash, total_lines, session_meta.last_modified
